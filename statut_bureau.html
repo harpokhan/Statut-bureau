@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Statut Bureau</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f0f1a;
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 32px;
+      padding: 24px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: #aaa;
+      text-transform: uppercase;
+    }
+
+    #status-bar {
+      font-size: 1rem;
+      padding: 8px 20px;
+      border-radius: 20px;
+      background: #1e1e2e;
+      color: #888;
+      transition: all 0.3s;
+    }
+
+    #status-bar.connected { background: #1a3a2a; color: #4ade80; }
+    #status-bar.error     { background: #3a1a1a; color: #f87171; }
+
+    .buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      width: 100%;
+      max-width: 320px;
+    }
+
+    button {
+      width: 100%;
+      padding: 20px;
+      border: none;
+      border-radius: 16px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    #btn-dispo  { background: #4ade80; color: #0f2a1a; }
+    #btn-occupe { background: #f87171; color: #2a0f0f; }
+    #btn-absent { background: #facc15; color: #2a1f00; }
+
+    #btn-connect {
+      background: #1e1e2e;
+      color: #aaa;
+      border: 1px solid #333;
+      font-size: 0.95rem;
+      padding: 14px;
+      margin-top: 8px;
+    }
+
+    #btn-connect.connected { border-color: #4ade80; color: #4ade80; }
+
+    .current-statut {
+      font-size: 0.9rem;
+      color: #555;
+    }
+    .current-statut span {
+      color: #fff;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🚪 Statut Bureau</h1>
+
+  <div id="status-bar">Non connecté</div>
+
+  <div class="buttons">
+    <button id="btn-dispo"  disabled>😊 DISPONIBLE</button>
+    <button id="btn-occupe" disabled>🔒 OCCUPÉ</button>
+    <button id="btn-absent" disabled>⛔ ABSENT</button>
+    <button id="btn-connect">🔵 Connecter l'ESP32</button>
+  </div>
+
+  <div class="current-statut">Statut actuel : <span id="current">—</span></div>
+
+  <script>
+    const SERVICE_UUID        = "12345678-1234-1234-1234-123456789abc";
+    const CHARACTERISTIC_UUID = "abcd1234-ab12-ab12-ab12-abcdef123456";
+
+    let characteristic = null;
+
+    const statusBar  = document.getElementById("status-bar");
+    const btnConnect = document.getElementById("btn-connect");
+    const btnDispo   = document.getElementById("btn-dispo");
+    const btnOccupe  = document.getElementById("btn-occupe");
+    const btnAbsent  = document.getElementById("btn-absent");
+    const current    = document.getElementById("current");
+
+    const actionBtns = [btnDispo, btnOccupe, btnAbsent];
+
+    function setStatus(msg, cls = "") {
+      statusBar.textContent = msg;
+      statusBar.className = cls;
+    }
+
+    function setConnected(ok) {
+      actionBtns.forEach(b => b.disabled = !ok);
+      btnConnect.textContent = ok ? "✅ Connecté" : "🔵 Connecter l'ESP32";
+      btnConnect.className   = ok ? "connected" : "";
+    }
+
+    async function connect() {
+      if (!navigator.bluetooth) {
+        setStatus("Web Bluetooth non supporté sur ce navigateur", "error");
+        return;
+      }
+      try {
+        setStatus("Recherche de l'ESP32...");
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: "Statut Bureau" }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        setStatus("Connexion...");
+        const server  = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+        setStatus("Connecté à " + device.name, "connected");
+        setConnected(true);
+
+        device.addEventListener("gattserverdisconnected", () => {
+          setStatus("Déconnecté", "error");
+          setConnected(false);
+          characteristic = null;
+        });
+
+      } catch (err) {
+        setStatus("Erreur : " + err.message, "error");
+      }
+    }
+
+    async function envoyer(commande) {
+      if (!characteristic) return;
+      try {
+        const encoder = new TextEncoder();
+        await characteristic.writeValue(encoder.encode(commande));
+        current.textContent = commande;
+      } catch (err) {
+        setStatus("Erreur envoi : " + err.message, "error");
+      }
+    }
+
+    btnConnect.addEventListener("click", connect);
+    btnDispo  .addEventListener("click", () => envoyer("DISPO"));
+    btnOccupe .addEventListener("click", () => envoyer("OCCUPE"));
+    btnAbsent .addEventListener("click", () => envoyer("ABSENT"));
+  </script>
+
+</body>
+</html>
